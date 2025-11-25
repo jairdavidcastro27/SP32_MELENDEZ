@@ -52,12 +52,13 @@ const bool numeros[10][7] = {
 
 #define PI 3.14159265359
 
-// --- RANGO 40CM ---
-#define LIMITE_DETECCION 40.0
-#define ZONA_ALERTA 30.0
-#define ZONA_PELIGRO 20.0
-#define ZONA_CRITICA 10.0
-#define ZONA_EMERGENCIA 5.0
+// --- RANGO 70CM ---
+// --- RANGO 70CM - ALERTA CÓMODA Y FUERTE ---
+#define LIMITE_DETECCION 70.0
+#define ZONA_LEJOS       70.0   // 50-70 cm → pitidos lentos
+#define ZONA_MEDIA       50.0   // 30-50 cm → más frecuentes
+#define ZONA_CERCA       30.0   // 15-30 cm → rápidos
+#define ZONA_MUY_CERCA   15.0   // <15 cm → muy rápidos y vibrador
 
 // --- VARIABLES GLOBALES ---
 float distancia_actual = 0.0;
@@ -475,40 +476,58 @@ float medirDistancia() {
 
 int escalaDistancia(float d) {
   if (d > LIMITE_DETECCION || d <= 0) return 0;
-  if (d < 4) d = 4;
-  int nivel = 9 - ((d - 4) / 4);
+  if (d < 6) d = 6;
+  int nivel = 10 - (int)(d / 7.7);  // Ajustado para 70cm → nivel 1 a ~62cm, nivel 9 a ~8cm
   return constrain(nivel, 1, 9);
 }
 
 void controlarAlertasProximidad(float distancia, unsigned long ahora) {
-  if (distancia > LIMITE_DETECCION || distancia <= 0) {
-    tipo_zona = 0; noTone(BUZZER); digitalWrite(VIBRADOR, LOW); return;
+  if (distancia > LIMITE_DETECCION || distancia <= 0 || distancia > 400) {
+    noTone(BUZZER);
+    digitalWrite(VIBRADOR, LOW);
+    tipo_zona = 0;
+    return;
   }
-  
-  if (distancia <= ZONA_EMERGENCIA) tipo_zona = 4;
-  else if (distancia <= ZONA_CRITICA) tipo_zona = 3;
-  else if (distancia <= ZONA_PELIGRO) tipo_zona = 2;
-  else tipo_zona = 1;
 
-  int intervalo = 0, freq = 0, dur = 0;
+  // Determinar zona según distancia
+  if (distancia <= ZONA_MUY_CERCA)       tipo_zona = 4;  // < 15 cm
+  else if (distancia <= ZONA_CERCA)      tipo_zona = 3;  // 15-30 cm
+  else if (distancia <= ZONA_MEDIA)      tipo_zona = 2;  // 30-50 cm
+  else                                   tipo_zona = 1;  // 50-70 cm
+
+  static unsigned long ultimo_beep = 0;
+  int intervalo = 0;
+  int frecuencia = 1000;
+
   switch(tipo_zona) {
-    case 1: intervalo = 1400; freq = 500; dur = 70; digitalWrite(VIBRADOR, LOW); break;
-    case 2: intervalo = 800;  freq = 1000; dur = 90; digitalWrite(VIBRADOR, LOW); break;
-    case 3: intervalo = 450;  freq = 1700; dur = 110; digitalWrite(VIBRADOR, LOW); break;
-    case 4: intervalo = 180;  freq = 2400; dur = 70;
-      if (ahora - tiempo_ultimo_vibrador >= 180) {
-        digitalWrite(VIBRADOR, !digitalRead(VIBRADOR));
-        tiempo_ultimo_vibrador = ahora;
-      }
+    case 1:  // Lejos → lento y grave
+      intervalo = 1400;
+      frecuencia = 900;
+      digitalWrite(VIBRADOR, LOW);
+      break;
+    case 2:  // Acercándose → más frecuente
+      intervalo = 800;
+      frecuencia = 1200;
+      digitalWrite(VIBRADOR, LOW);
+      break;
+    case 3:  // Cerca → rápido
+      intervalo = 400;
+      frecuencia = 1500;
+      digitalWrite(VIBRADOR, HIGH);
+      break;
+    case 4:  // ¡Muy cerca!
+      intervalo = 180;
+      frecuencia = 1800;
+      digitalWrite(VIBRADOR, HIGH);
       break;
   }
-  
-  if (ahora - tiempo_ultimo_beep >= intervalo) {
-    tone(BUZZER, freq, dur);
-    tiempo_ultimo_beep = ahora;
+
+  // Beep limpio, fuerte y profesional
+  if (ahora - ultimo_beep >= intervalo) {
+    tone(BUZZER, frecuencia, 100);  // beep corto y claro
+    ultimo_beep = ahora;
   }
 }
-
 void controlar_pulso(unsigned long ahora) {
   if (!pulso_activo && ahora - ultimo_pulso > 750) {
     pulso_activo = true;
